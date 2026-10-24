@@ -527,10 +527,30 @@ def exploit():
   dfu.usb_reset(device)
   dfu.release_device(device)
 
-  device = dfu.acquire_device()
-  if 'PWND:[checkm8]' not in device.serial_number:
+  serial_number = None
+  for _ in range(5):
+    device = None
+    try:
+      device = dfu.acquire_device(timeout=1.0, fatal=False)
+      if device is None:
+        continue
+      try:
+        serial_number = device.serial_number
+      except ValueError as error:
+        if str(error) != 'The device has no langid':
+          raise
+        descriptor = device.ctrl_transfer(0x80, 6, 0x300 | device.iSerialNumber, 0x409, 255, 1000)
+        serial_number = descriptor[2:descriptor[0]].tostring().decode('utf-16-le')
+      if 'PWND:[checkm8]' in (serial_number or ''):
+        break
+    except usb.core.USBError:
+      pass
+    finally:
+      if device is not None:
+        dfu.release_device(device)
+    time.sleep(0.2)
+  if 'PWND:[checkm8]' not in (serial_number or ''):
     print 'ERROR: Exploit failed. Device did not enter pwned DFU Mode.'
     sys.exit(1)
   print 'Device is now in pwned DFU Mode.'
   print '(%0.2f seconds)' % (time.time() - start)
-  dfu.release_device(device)
